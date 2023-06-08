@@ -1,6 +1,17 @@
-from rclpy.node import Node
 import cv2
+import json
+import matplotlib.pyplot as plt
+import numpy as np
 import os
+from PIL import Image
+
+# Ros
+from rclpy.node import Node
+
+# Torch
+import torch
+import torchvision
+import torchvision.transforms as TS
 
 # Grounding DINO
 import GroundingDINO.groundingdino.datasets.transforms as T
@@ -18,11 +29,6 @@ from segment_anything import build_sam, SamPredictor
 from Tag2Text.models import tag2text
 from Tag2Text import inference
 
-import torch
-import torchvision.transforms as TS
-
-from PIL import Image
-
 
 class SegmentateImageNode(Node):
     def __init__(self):
@@ -30,7 +36,6 @@ class SegmentateImageNode(Node):
         self.declare_parameter("tag2text_checkpoint", "")
         self.declare_parameter("grounded_checkpoint", "")
         self.declare_parameter("sam_checkpoint", "")
-        self.declare_parameter("input_image", "")
         self.declare_parameter("split", ",")
         self.declare_parameter("openai_key", "")
         self.declare_parameter("openai_proxy", None)
@@ -48,6 +53,7 @@ class SegmentateImageNode(Node):
         self.device = self.get_parameter("device").value
         self.box_threshold = self.get_parameter("box_threshold").value
         self.text_threshold = self.get_parameter("text_threshold").value
+        self.iou_threshold = self.get_parameter("iou_threshold").value
 
         # Load grounding model
         grounded_checkpoint = self.get_parameter("grounded_checkpoint").value
@@ -94,7 +100,7 @@ class SegmentateImageNode(Node):
         # build pred
         pred_phrases = []
         scores = []
-        for logit, box in zip(logits_filt, boxes_filt):
+        for logit, _ in zip(logits_filt, boxes_filt):
             pred_phrase = get_phrases_from_posmap(
                 logit > self.text_threshold, tokenized, tokenlizer
             )
@@ -137,8 +143,11 @@ class SegmentateImageNode(Node):
 
     # TODO: Make a ros2 subscriber to send the new image.
     def on_new_image(self, msg):
+        # Using msg.data as image_path to avoid creating ros msg.
+        image_path = msg.data
+
         # load image
-        image_pil, image = self.load_image(msg.data)
+        image_pil, image = self.load_image(image_path)
         # visualize raw image
         # TODO: Do we need this?
         image_pil.save(os.path.join(self.output_dir, "raw_image.jpg"))
@@ -148,6 +157,7 @@ class SegmentateImageNode(Node):
         raw_image = image_pil.resize((384, 384))
         raw_image = transform(raw_image).unsqueeze(0).to(self.device)
 
+        # get labels using tag2text model
         specified_tags = "None"  # All by default.
         res = inference.inference(raw_image, self.tag2text_model, specified_tags)
         text_prompt = res[0].replace(" |", ",")
@@ -156,12 +166,85 @@ class SegmentateImageNode(Node):
         print(f"Caption: {caption}")
         print(f"Tags: {text_prompt}")
 
-        # run grounding dino model
+        # get boxes using grounding model
+        boxes_filt, pred_phrases = self.get_boxes(
+            image=image,
+            image_pil=image_pil,
+            text_prompt=text_prompt,
+            caption=caption,
+        )
+
+        # get masks using sam model
+        masks = self.segmentate_image(image_path, boxes_filt)
+
+        # draw output image
+        plt.figure(figsize=(10, 10))
+        plt.imshow(image)
+        for mask in masks:
+            self.show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
+        for box, label in zip(boxes_filt, pred_phrases):
+            self.show_box(box.numpy(), plt.gca(), label)
+
+        plt.title(
+            "Tag2Text-Captioning: "
+            + caption
+            + "\n"
+            + "Tag2Text-Tagging"
+            + text_prompt
+            + "\n"
+        )
+        plt.axis("off")
+        plt.savefig(
+            os.path.join(self.output_dir, "automatic_label_output.jpg"),
+            bbox_inches="tight",
+            dpi=300,
+            pad_inches=0.0,
+        )
+
+        self.save_mask_data(self.output_dir, caption, masks, boxes_filt, pred_phrases)
+
+    def get_boxes(self, image, image_pil, text_prompt, caption):
         boxes_filt, scores, pred_phrases = self.get_grounding_output(
             model=self.groundino_model,
             image=image,
             caption=text_prompt,
         )
+
+        size = image_pil.size
+        H, W = size[1], size[0]
+        for i in range(boxes_filt.size(0)):
+            boxes_filt[i] = boxes_filt[i] * torch.Tensor([W, H, W, H])
+            boxes_filt[i][:2] -= boxes_filt[i][2:] / 2
+            boxes_filt[i][2:] += boxes_filt[i][:2]
+
+        boxes_filt = boxes_filt.cpu()
+        # use NMS to handle overlapped boxes
+        print(f"Before NMS: {boxes_filt.shape[0]} boxes")
+        nms_idx = (
+            torchvision.ops.nms(boxes_filt, scores, self.iou_threshold).numpy().tolist()
+        )
+        boxes_filt = boxes_filt[nms_idx]
+        pred_phrases = [pred_phrases[idx] for idx in nms_idx]
+        print(f"After NMS: {boxes_filt.shape[0]} boxes")
+        print(f"Revise caption with number: {caption}")
+        return boxes_filt, pred_phrases
+
+    def segmentate_image(self, image_path, boxes_filt):
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        self.sam_predictor.set_image(image)
+
+        transformed_boxes = self.sam_predictor.transform.apply_boxes_torch(
+            boxes_filt, image.shape[:2]
+        ).to(self.device)
+
+        masks, _, _ = self.sam_predictor.predict_torch(
+            point_coords=None,
+            point_labels=None,
+            boxes=transformed_boxes.to(self.device),
+            multimask_output=False,
+        )
+        return masks
 
     def load_image(self, image_path):
         # load image
@@ -177,123 +260,56 @@ class SegmentateImageNode(Node):
         image, _ = transform(image_pil, None)  # 3, h, w
         return image_pil, image
 
-    # cfg
-    config_file = args.config  # change the path of the model config file
-    tag2text_checkpoint = args.tag2text_checkpoint  # change the path of the model
-    grounded_checkpoint = args.grounded_checkpoint  # change the path of the model
-    sam_checkpoint = args.sam_checkpoint
-    image_path = args.input_image
-    split = args.split
-    openai_key = args.openai_key
-    openai_proxy = args.openai_proxy
-    output_dir = args.output_dir
-    box_threshold = args.box_threshold
-    text_threshold = args.text_threshold
-    iou_threshold = args.iou_threshold
-    device = args.device
+    def save_mask_data(output_dir, caption, mask_list, box_list, label_list):
+        value = 0  # 0 for background
 
-    # ChatGPT or nltk is required when using captions
-    # openai.api_key = openai_key
-    # if openai_proxy:
-    # openai.proxy = {"http": openai_proxy, "https": openai_proxy}
+        mask_img = torch.zeros(mask_list.shape[-2:])
+        for idx, mask in enumerate(mask_list):
+            mask_img[mask.cpu().numpy()[0] == True] = value + idx + 1
+        plt.figure(figsize=(10, 10))
+        plt.imshow(mask_img.numpy())
+        plt.axis("off")
+        plt.savefig(
+            os.path.join(output_dir, "mask.jpg"),
+            bbox_inches="tight",
+            dpi=300,
+            pad_inches=0.0,
+        )
 
-    # initialize Tag2Text
-    normalize = TS.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    transform = TS.Compose([TS.Resize((384, 384)), TS.ToTensor(), normalize])
+        json_data = {
+            "caption": caption,
+            "mask": [{"value": value, "label": "background"}],
+        }
+        for label, box in zip(label_list, box_list):
+            value += 1
+            name, logit = label.split("(")
+            logit = logit[:-1]  # the last is ')'
+            json_data["mask"].append(
+                {
+                    "value": value,
+                    "label": name,
+                    "logit": float(logit),
+                    "box": box.numpy().tolist(),
+                }
+            )
+        with open(os.path.join(output_dir, "label.json"), "w") as f:
+            json.dump(json_data, f)
 
-    # filter out attributes and action categories which are difficult to grounding
-    delete_tag_index = []
-    for i in range(3012, 3429):
-        delete_tag_index.append(i)
+    def show_box(box, ax, label):
+        x0, y0 = box[0], box[1]
+        w, h = box[2] - box[0], box[3] - box[1]
+        ax.add_patch(
+            plt.Rectangle(
+                (x0, y0), w, h, edgecolor="green", facecolor=(0, 0, 0, 0), lw=2
+            )
+        )
+        ax.text(x0, y0, label)
 
-    specified_tags = "None"
-    # load model
-    tag2text_model = tag2text.tag2text_caption(
-        pretrained=tag2text_checkpoint,
-        image_size=384,
-        vit="swin_b",
-        delete_tag_index=delete_tag_index,
-    )
-    # threshold for tagging
-    # we reduce the threshold to obtain more tags
-    tag2text_model.threshold = 0.64
-    tag2text_model.eval()
-
-    tag2text_model = tag2text_model.to(device)
-    raw_image = image_pil.resize((384, 384))
-    raw_image = transform(raw_image).unsqueeze(0).to(device)
-
-    res = inference.inference(raw_image, tag2text_model, specified_tags)
-
-    # Currently ", " is better for detecting single tags
-    # while ". " is a little worse in some case
-    text_prompt = res[0].replace(" |", ",")
-    caption = res[2]
-
-    print(f"Caption: {caption}")
-    print(f"Tags: {text_prompt}")
-
-    # run grounding dino model
-    boxes_filt, scores, pred_phrases = get_grounding_output(
-        model, image, text_prompt, box_threshold, text_threshold, device=device
-    )
-
-    # initialize SAM
-    predictor = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device))
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    predictor.set_image(image)
-
-    size = image_pil.size
-    H, W = size[1], size[0]
-    for i in range(boxes_filt.size(0)):
-        boxes_filt[i] = boxes_filt[i] * torch.Tensor([W, H, W, H])
-        boxes_filt[i][:2] -= boxes_filt[i][2:] / 2
-        boxes_filt[i][2:] += boxes_filt[i][:2]
-
-    boxes_filt = boxes_filt.cpu()
-    # use NMS to handle overlapped boxes
-    print(f"Before NMS: {boxes_filt.shape[0]} boxes")
-    nms_idx = torchvision.ops.nms(boxes_filt, scores, iou_threshold).numpy().tolist()
-    boxes_filt = boxes_filt[nms_idx]
-    pred_phrases = [pred_phrases[idx] for idx in nms_idx]
-    print(f"After NMS: {boxes_filt.shape[0]} boxes")
-    caption = check_caption(caption, pred_phrases)
-    print(f"Revise caption with number: {caption}")
-
-    transformed_boxes = predictor.transform.apply_boxes_torch(
-        boxes_filt, image.shape[:2]
-    ).to(device)
-
-    masks, _, _ = predictor.predict_torch(
-        point_coords=None,
-        point_labels=None,
-        boxes=transformed_boxes.to(device),
-        multimask_output=False,
-    )
-
-    # draw output image
-    plt.figure(figsize=(10, 10))
-    plt.imshow(image)
-    for mask in masks:
-        show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
-    for box, label in zip(boxes_filt, pred_phrases):
-        show_box(box.numpy(), plt.gca(), label)
-
-    plt.title(
-        "Tag2Text-Captioning: "
-        + caption
-        + "\n"
-        + "Tag2Text-Tagging"
-        + text_prompt
-        + "\n"
-    )
-    plt.axis("off")
-    plt.savefig(
-        os.path.join(output_dir, "automatic_label_output.jpg"),
-        bbox_inches="tight",
-        dpi=300,
-        pad_inches=0.0,
-    )
-
-    save_mask_data(output_dir, caption, masks, boxes_filt, pred_phrases)
+    def show_mask(self, mask, ax, random_color=False):
+        if random_color:
+            color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+        else:
+            color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
+        h, w = mask.shape[-2:]
+        mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+        ax.imshow(mask_image)
