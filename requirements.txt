@@ -1,0 +1,8 @@
+torch
+numpy
+pycocotools
+nltk
+fairscale
+scipy
+setuptools_rust
+docker-compose

@@ -126,7 +126,7 @@ class SegmentateImage(object):
 
         return model.to(self.device)
 
-    def get_mask(self, image_path):
+    def get_objects(self, image_path):
         # load image
         image_pil, image = self.load_image(image_path)
         # visualize raw image
@@ -164,7 +164,11 @@ class SegmentateImage(object):
         plt.imshow(image)
         for mask in masks:
             self.show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
+        boxes = []
+        labels = []
         for box, label in zip(boxes_filt, pred_phrases):
+            boxes.append(box)
+            labels.append(label)
             self.show_box(box.numpy(), plt.gca(), label)
 
         plt.title(
@@ -184,6 +188,8 @@ class SegmentateImage(object):
         )
 
         self.save_mask_data(self.output_dir, caption, masks, boxes_filt, pred_phrases)
+        # TODO: Return the masks (points) with the labels.
+        return masks, boxes, labels
 
     def get_boxes(self, image, image_pil, text_prompt, caption):
         boxes_filt, scores, pred_phrases = self.get_grounding_output(

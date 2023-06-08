@@ -16,10 +16,8 @@ services:
   base:
     image: moveit_gazebo
     build:
-      context: .
-      dockerfile: .docker/Dockerfile
       context: ..
-      dockerfile: dr/Dockerfile
+      dockerfile: .docker/Dockerfile
 
     # Interactive shell
     stdin_open: true
@@ -39,51 +37,14 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
 
-  # Demo: Panda MoveGroup + RViz MotionPlanning panel
-  demo_gazebo:
-    extends: base
-    command: ros2 launch moveit_resources_panda_moveit_config demo.launch.py ros2_control_hardware_type:=sim_ignition use_sim_time:=true initial_positions_file:=initial_positions_zero.yaml
-
-  demo_mock_components:
-    extends: base
-    command: ros2 launch moveit_resources_panda_moveit_config demo.launch.py ros2_control_hardware_type:=mock_components
-
-  demo_gazebo_gpu:
-    extends: demo_gazebo
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-
-  demo_mock_components_gpu:
-    extends: demo_mock_components
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-
   # Run the Python Motion Planning Tutorial
   # https://moveit.picknik.ai/main/doc/examples/motion_planning_python_api/motion_planning_python_api_tutorial.html
   python_gazebo:
     extends: base
     command: ros2 launch moveit2_tutorials motion_planning_python_api_tutorial.launch.py ros2_control_hardware_type:=sim_ignition use_sim_time:=true initial_positions_file:=initial_positions_zero.yaml
 
-  python_mock_components:
-    extends: base
-    command: ros2 launch moveit2_tutorials motion_planning_python_api_tutorial.launch.py
-
   python_gazebo_gpu:
     extends: python_gazebo
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-
-  python_mock_components_gpu:
-    extends: demo_mock_components
     deploy:
       resources:
         reservations:
