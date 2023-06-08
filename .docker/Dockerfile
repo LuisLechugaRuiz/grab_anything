@@ -16,16 +16,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     python3-pip
 
+# TODO: Make this more clean.
+RUN apt-get install -y --no-install-recommends \
+    ros-humble-moveit-resources-panda-moveit-config \
+    ros-humble-ros-gz-sim \
+    ros-humble-ros-gz-bridge \
+    ros-humble-controller-manager
+
 WORKDIR /app
 
-COPY README.md requirements.txt ./
 COPY grab_anything ./grab_anything
+COPY README.md requirements.txt setup.py ./grab_anything/
 
 # Install dependencies
 RUN pip install --upgrade pip
 RUN pip install setuptools wheel
 
-RUN pip install -r requirements.txt
+RUN cd grab_anything && pip install .
 RUN pip install git+https://github.com/huggingface/transformers
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y

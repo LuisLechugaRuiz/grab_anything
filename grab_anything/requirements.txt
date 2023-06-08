@@ -6,4 +6,3 @@ fairscale
 scipy
 setuptools_rust
 docker-compose
-rclpy_msgs

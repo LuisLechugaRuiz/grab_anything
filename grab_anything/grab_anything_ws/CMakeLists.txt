@@ -7,10 +7,6 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
-
 find_package(moveit_resources_panda_moveit_config REQUIRED)
 
 if(BUILD_TESTING)
@@ -26,6 +22,7 @@ if(BUILD_TESTING)
 endif()
 
 install(PROGRAMS
+  src/grab_object_node.py
   scripts/motion_planning_python_api_tutorial.py
   scripts/motion_planning_python_api_planning_scene.py
   DESTINATION lib/${PROJECT_NAME}

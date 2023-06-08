@@ -31,29 +31,31 @@ def generate_launch_description():
 
     declare_initial_positions_file = DeclareLaunchArgument(
         "initial_positions_file",
-        default_value="panda_initial_positions.yaml",
+        default_value="initial_positions.yaml",
         description="Initial joint positions to use for ros2_control fake components and simulation -- expected to be a yaml file inside the config directory",
     )
-
     use_sim_time = LaunchConfiguration("use_sim_time")
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         "use_sim_time",
         default_value="False",
         description="Use simulation (Gazebo) clock if True",
     )
-
     moveit_config = (
         MoveItConfigsBuilder(
             robot_name="panda", package_name="moveit_resources_panda_moveit_config"
         )
         .planning_scene_monitor(publish_robot_description=True)
         .robot_description(
-            file_path="config/panda.urdf.xacro",
+            file_path=get_package_share_directory("grab_anything_ws")
+            + "/config/panda.urdf.xacro",
             mappings={
                 "ros2_control_hardware_type": LaunchConfiguration(
                     "ros2_control_hardware_type"
                 ),
-                "initial_positions_file": LaunchConfiguration("initial_positions_file"),
+                "initial_positions_file": get_package_share_directory(
+                    "grab_anything_ws"
+                )
+                + "/config/panda_initial_pose.yaml",
             },
         )
         .trajectory_execution(file_path="config/gripper_moveit_controllers.yaml")
@@ -63,7 +65,6 @@ def generate_launch_description():
         )
         .to_moveit_configs()
     )
-
     example_file = DeclareLaunchArgument(
         "example_file",
         default_value="motion_planning_python_api_tutorial.py",
@@ -74,25 +75,19 @@ def generate_launch_description():
     # so we merge the dicts here
     moveit_config_dict = moveit_config.to_dict()
     moveit_config_dict.update({"use_sim_time": use_sim_time})
-
-    # moveit_py_node = Node(
-    #    name="moveit_py",
-    #    package="moveit2_tutorials",
-    #    executable=LaunchConfiguration("example_file"),
-    #    output="both",
-    #    arguments=[
-    #        "--ros-args",
-    #        "--log-level",
-    #        "info"],
-    #    parameters=[moveit_config_dict],
-    # )
-
+    grab_anythig_node = Node(
+        name="grab_anything_node",
+        package="grab_anything_ws",
+        executable="grab_object_node.py",
+        output="both",
+        arguments=["--ros-args", "--log-level", "info"],
+        parameters=[moveit_config_dict],
+    )
     rviz_config_file = os.path.join(
         get_package_share_directory("grab_anything_ws"),
         "config",
         "motion_planning_python_api_tutorial.rviz",
     )
-
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -107,6 +102,7 @@ def generate_launch_description():
         ],
     )
 
+    print("7")
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -209,11 +205,12 @@ def generate_launch_description():
             ),
             ignition_spawn_entity,
             example_file,
-            moveit_py_node,
             robot_state_publisher,
             ros2_control_node,
             rviz_node,
             static_tf,
+            grab_anythig_node,
         ]
         + load_controllers
     )
+    # TODO: add moveit_py_node

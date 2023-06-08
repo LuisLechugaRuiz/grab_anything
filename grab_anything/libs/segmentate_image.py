@@ -23,8 +23,8 @@ from groundingdino.util.utils import (
 from segment_anything import build_sam, SamPredictor
 
 # Tag2Text
-from tag2text import inference
-from tag2text.models import tag2text
+from Tag2Text import inference_tag2text
+from Tag2Text.models import tag2text
 
 
 class SegmentateImage(object):
@@ -140,7 +140,9 @@ class SegmentateImage(object):
 
         # get labels using tag2text model
         specified_tags = "None"  # All by default.
-        res = inference.inference(raw_image, self.tag2text_model, specified_tags)
+        res = inference_tag2text.inference(
+            raw_image, self.tag2text_model, specified_tags
+        )
         text_prompt = res[0].replace(" |", ",")
         caption = res[2]
         # TODO: Change by ros2 logs.
