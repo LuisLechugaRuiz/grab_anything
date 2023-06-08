@@ -11,10 +11,10 @@ import torchvision
 import torchvision.transforms as TS
 
 # Grounding DINO
-import GroundingDINO.groundingdino.datasets.transforms as T
-from GroundingDINO.groundingdino.models import build_model
-from GroundingDINO.groundingdino.util.slconfig import SLConfig
-from GroundingDINO.groundingdino.util.utils import (
+import groundingdino.datasets.transforms as T
+from groundingdino.models import build_model
+from groundingdino.util.slconfig import SLConfig
+from groundingdino.util.utils import (
     clean_state_dict,
     get_phrases_from_posmap,
 )
@@ -23,8 +23,8 @@ from GroundingDINO.groundingdino.util.utils import (
 from segment_anything import build_sam, SamPredictor
 
 # Tag2Text
-from Tag2Text.models import tag2text
-from Tag2Text import inference
+from tag2text import inference
+from tag2text.models import tag2text
 
 
 class SegmentateImage(object):

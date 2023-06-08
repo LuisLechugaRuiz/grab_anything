@@ -18,7 +18,6 @@ services:
     build:
       context: ..
       dockerfile: .docker/Dockerfile
-
     # Interactive shell
     stdin_open: true
     tty: true
@@ -34,6 +33,7 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       # Allows graphical programs in the container
+      - ../grab_anything:/app/grab_anything
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
 
@@ -41,10 +41,11 @@ services:
   # https://moveit.picknik.ai/main/doc/examples/motion_planning_python_api/motion_planning_python_api_tutorial.html
   python_gazebo:
     extends: base
-    command: ros2 launch moveit2_tutorials motion_planning_python_api_tutorial.launch.py ros2_control_hardware_type:=sim_ignition use_sim_time:=true initial_positions_file:=initial_positions_zero.yaml
+    # command: ros2 launch moveit2_tutorials motion_planning_python_api_tutorial.launch.py ros2_control_hardware_type:=sim_ignition use_sim_time:=true initial_positions_file:=initial_positions_zero.yaml
 
   python_gazebo_gpu:
     extends: python_gazebo
+    command: tail -f /dev/null
     deploy:
       resources:
         reservations:

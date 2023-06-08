@@ -35,8 +35,8 @@ class GrabObjectNode(Node):
         )
 
         # TODO: Change by whisper + ChatGPT activation
-        self.process_image_subscriber = self.create_subscription(
-            String, "process_image", self.process_image_callback, 10
+        self.grab_object_callback = self.create_subscription(
+            String, "grab_object", self.grab_object_callback, 10
         )
         self.image_path = "last_image.png"
         self.segmentate_image = SegmentateImage()
@@ -53,23 +53,24 @@ class GrabObjectNode(Node):
     def depth_image_callback(self, msg):
         self.last_depth_image = self.bridge.imgmsg_to_cv2(msg, "32FC1")
 
-    def process_image_callback(self, msg):
+    def grab_object_callback(self, msg):
         if self.last_image is not None:
             cv2.imwrite(self.image_path, self.last_image)
             self.get_logger().info("Image saved to " + self.image_path)
             masks, _, labels = self.segmentate_image.get_objects(self.image_path)
-            object = msg.data
+            target_object = msg.data
             # We shoud get an object id from the object as this is just a label.
-            if object in labels:
+            if target_object in labels:
                 points_3d = self.get_3d_points(
-                    mask=masks[labels.index(msg.data)],
+                    mask=masks[labels.index(target_object)],
                     depth_image=self.last_depth_image,
                 )
                 self.get_logger().info("Object found!")
                 self.add_to_planning_scene(points_3d)
                 self.move_to_object(object_id=object)
-                # Ideal flow:
-                # Find grasping point for the segmented object.
+                # -- Ideal flow ---
+                # Create a full mesh, can be done using Nerf or moving the camera around and interpolating the points from different detections.
+                # Find the ideal grasping point for the segmented object.
                 # Move closer to the grasping point.
                 # Open gripper.
                 # Move to grasping point.

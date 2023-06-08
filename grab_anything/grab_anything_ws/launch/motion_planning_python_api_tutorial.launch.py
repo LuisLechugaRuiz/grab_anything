@@ -31,17 +31,17 @@ def generate_launch_description():
 
     declare_initial_positions_file = DeclareLaunchArgument(
         "initial_positions_file",
-        default_value="panda_initial_positions.yaml",
+        default_value="initial_positions.yaml",
         description="Initial joint positions to use for ros2_control fake components and simulation -- expected to be a yaml file inside the config directory",
     )
-
+    print("1")
     use_sim_time = LaunchConfiguration("use_sim_time")
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         "use_sim_time",
         default_value="False",
         description="Use simulation (Gazebo) clock if True",
     )
-
+    print("2")
     moveit_config = (
         MoveItConfigsBuilder(
             robot_name="panda", package_name="moveit_resources_panda_moveit_config"
@@ -53,7 +53,10 @@ def generate_launch_description():
                 "ros2_control_hardware_type": LaunchConfiguration(
                     "ros2_control_hardware_type"
                 ),
-                "initial_positions_file": LaunchConfiguration("initial_positions_file"),
+                "initial_positions_file": get_package_share_directory(
+                    "grab_anything_ws"
+                )
+                + "/config/panda_initial_pose.yaml",
             },
         )
         .trajectory_execution(file_path="config/gripper_moveit_controllers.yaml")
@@ -63,7 +66,7 @@ def generate_launch_description():
         )
         .to_moveit_configs()
     )
-
+    print("3")
     example_file = DeclareLaunchArgument(
         "example_file",
         default_value="motion_planning_python_api_tutorial.py",
@@ -74,10 +77,10 @@ def generate_launch_description():
     # so we merge the dicts here
     moveit_config_dict = moveit_config.to_dict()
     moveit_config_dict.update({"use_sim_time": use_sim_time})
-
+    print("4")
     # moveit_py_node = Node(
     #    name="moveit_py",
-    #    package="moveit2_tutorials",
+    #    package="grab_anything_ws",
     #    executable=LaunchConfiguration("example_file"),
     #    output="both",
     #    arguments=[
@@ -87,12 +90,14 @@ def generate_launch_description():
     #    parameters=[moveit_config_dict],
     # )
 
+    print("5")
     rviz_config_file = os.path.join(
         get_package_share_directory("grab_anything_ws"),
         "config",
         "motion_planning_python_api_tutorial.rviz",
     )
 
+    print("6")
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -107,6 +112,7 @@ def generate_launch_description():
         ],
     )
 
+    print("7")
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -139,6 +145,7 @@ def generate_launch_description():
         ),
     )
 
+    print("9")
     ignition_spawn_entity = Node(
         package="ros_gz_sim",
         executable="create",
@@ -209,7 +216,6 @@ def generate_launch_description():
             ),
             ignition_spawn_entity,
             example_file,
-            moveit_py_node,
             robot_state_publisher,
             ros2_control_node,
             rviz_node,
@@ -217,3 +223,4 @@ def generate_launch_description():
         ]
         + load_controllers
     )
+    # TODO: add moveit_py_node
