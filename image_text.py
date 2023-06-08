@@ -177,6 +177,7 @@ class SegmentateImageNode(Node):
         # get masks using sam model
         masks = self.segmentate_image(image_path, boxes_filt)
 
+        # TODO: Send mask points to fill the octomap.
         # draw output image
         plt.figure(figsize=(10, 10))
         plt.imshow(image)
@@ -260,7 +261,7 @@ class SegmentateImageNode(Node):
         image, _ = transform(image_pil, None)  # 3, h, w
         return image_pil, image
 
-    def save_mask_data(output_dir, caption, mask_list, box_list, label_list):
+    def save_mask_data(self, output_dir, caption, mask_list, box_list, label_list):
         value = 0  # 0 for background
 
         mask_img = torch.zeros(mask_list.shape[-2:])
@@ -295,7 +296,7 @@ class SegmentateImageNode(Node):
         with open(os.path.join(output_dir, "label.json"), "w") as f:
             json.dump(json_data, f)
 
-    def show_box(box, ax, label):
+    def show_box(self, box, ax, label):
         x0, y0 = box[0], box[1]
         w, h = box[2] - box[0], box[3] - box[1]
         ax.add_patch(
