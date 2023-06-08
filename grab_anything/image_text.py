@@ -5,9 +5,6 @@ import numpy as np
 import os
 from PIL import Image
 
-# Ros
-from rclpy.node import Node
-
 # Torch
 import torch
 import torchvision
@@ -30,45 +27,33 @@ from Tag2Text.models import tag2text
 from Tag2Text import inference
 
 
-class SegmentateImageNode(Node):
+class SegmentateImage(object):
     def __init__(self):
-        self.declare_parameter("config", "")
-        self.declare_parameter("tag2text_checkpoint", "")
-        self.declare_parameter("grounded_checkpoint", "")
-        self.declare_parameter("sam_checkpoint", "")
-        self.declare_parameter("split", ",")
-        self.declare_parameter("openai_key", "")
-        self.declare_parameter("openai_proxy", None)
-        self.declare_parameter("output_dir", "outputs")
-        self.declare_parameter("box_threshold", 0.25)
-        self.declare_parameter("text_threshold", 0.2)
-        self.declare_parameter("iou_threshold", 0.5)
-        self.declare_parameter("device", "cpu")
-        self.declare_parameter("output_dir", "")
-        # TODO: add output folder as a parameter.
-        # Create output dir if it does not exist.
-        self.output_dir = self.get_parameter("output_dir").value
+        # TODO: Move to config folder instead of hardcoding them here.
+        self.box_threshold = 0.25
+        self.text_threshold = 0.2
+        self.iou_threshold = 0.5
+        self.device = "cuda"
+
+        groundingdino_config_file = "config/groundingdino_cfg.py"
+        tag2text_checkpoint = "Tag2Text/tag2text_swin_14m.pth"
+        grounded_checkpoint = "groundingdino_swint_ogc.pth"
+        sam_checkpoint = "sam_vit_h_4b8939.pth"
+
+        self.output_dir = "outputs"
         os.makedirs(self.output_dir, exist_ok=True)
-        config_file = self.get_parameter("config").value
-        self.device = self.get_parameter("device").value
-        self.box_threshold = self.get_parameter("box_threshold").value
-        self.text_threshold = self.get_parameter("text_threshold").value
-        self.iou_threshold = self.get_parameter("iou_threshold").value
 
         # Load grounding model
-        grounded_checkpoint = self.get_parameter("grounded_checkpoint").value
         self.groundino_model = self.load_groundino_model(
-            config_file, grounded_checkpoint
+            groundingdino_config_file, grounded_checkpoint
         )
 
         # Load tag2text model
-        tag2text_checkpoint = self.get_parameter("tag2text_checkpoint").value
         self.tag2text_model = self.load_tag2text_model(
             tag2text_checkpoint=tag2text_checkpoint
         )
 
         # Load SAM predictor
-        sam_checkpoint = self.get_parameter("sam_checkpoint").value
         self.sam_predictor = SamPredictor(
             build_sam(checkpoint=sam_checkpoint).to(self.device)
         )
@@ -141,11 +126,7 @@ class SegmentateImageNode(Node):
 
         return model.to(self.device)
 
-    # TODO: Make a ros2 subscriber to send the new image.
-    def on_new_image(self, msg):
-        # Using msg.data as image_path to avoid creating ros msg.
-        image_path = msg.data
-
+    def get_mask(self, image_path):
         # load image
         image_pil, image = self.load_image(image_path)
         # visualize raw image
@@ -314,3 +295,13 @@ class SegmentateImageNode(Node):
         h, w = mask.shape[-2:]
         mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
         ax.imshow(mask_image)
+
+
+def main():
+    segmentate_image = SegmentateImage()
+    # Test
+    segmentate_image.segmentate_image(image_path="config/moveit_test_2.png")
+
+
+if __name__ == "__main__":
+    main()

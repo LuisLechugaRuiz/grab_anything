@@ -51,3 +51,10 @@ ompl_rrt_star:
     max_velocity_scaling_factor: 1.0
     max_acceleration_scaling_factor: 1.0
     planning_time: 1.5
+
+# TODO: FILL ME PROPERLY
+image_saver:  # node name
+  ros__parameters:
+    config: "path/to/config/file"
+    tag2text_checkpoint: "path/to/tag2text/checkpoint"
+    # and so on for the other parameters
