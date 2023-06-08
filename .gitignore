@@ -1,0 +1,13 @@
+*~
+*.pyc
+doc/manifest.yaml
+doc/html
+build
+Gemfile
+native_build
+*.gdb
+# For local rst builds
+_build/
+**/build/
+**/install/
+**/log/
