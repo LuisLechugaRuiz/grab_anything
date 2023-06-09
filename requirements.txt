@@ -7,3 +7,5 @@ scipy
 setuptools_rust
 docker-compose
 rclpy_msgs
+groundingdino
+segment-anything

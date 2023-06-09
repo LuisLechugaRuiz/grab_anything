@@ -40,19 +40,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /app
 
-# Clone repo, initialize and update submodules, and download pretrained weights
-RUN git clone https://github.com/IDEA-Research/Grounded-Segment-Anything.git && \
-    cd Grounded-Segment-Anything && \
-    git submodule init && \
-    git submodule update && \
-    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth && \
-    wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth && \
-    wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin_14m.pth && \
-    cd segment_anything && pip install . && \
-    cd ../GroundingDINO && pip install . && cd .. && \
-    git clone https://github.com/LuisLechugaRuiz/Recognize_Anything-Tag2Text && \
-    cd Recognize_Anything-Tag2Text && pip install .
-
 # Set up the entrypoint for both container start and interactive terminals.
 COPY ./.docker/ros_entrypoint.sh /opt/.ros/
 RUN echo "source /opt/.ros/ros_entrypoint.sh" >> ~/.bashrc

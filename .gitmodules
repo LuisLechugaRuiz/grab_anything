@@ -1,3 +1,3 @@
-[submodule "grab_anything/libs/Tag2Text"]
-	path = grab_anything/libs/Tag2Text
+[submodule "grab_anything/libs/recognize_anything"]
+	path = grab_anything/libs/recognize_anything
 	url = git@github.com:xinyu1205/Recognize_Anything-Tag2Text.git

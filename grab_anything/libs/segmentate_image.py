@@ -3,7 +3,8 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import urllib.request
+import requests
+from tqdm import tqdm
 from PIL import Image
 
 # Torch
@@ -22,8 +23,8 @@ from groundingdino.util.utils import (
 # Segmentate Anything
 from segment_anything import build_sam, SamPredictor
 
-# Recognize Anything
-from recognize_anything.models import ram
+# Recognize Anything - TODO: Install by pip.
+from recognize_anything.models.tag2text import ram
 
 
 class SegmentateImage(object):
@@ -43,29 +44,52 @@ class SegmentateImage(object):
         # Load grounding model
         self.groundino_model = self.load_groundino_model(
             config_path=groundingdino_config_file,
-            checkpoint_path=checkpoints.grounded,
+            checkpoint=checkpoints.grounded,
         )
         # Load tag2text model
-        self.ram_model = self.load_ram_model(checkpoint_path=checkpoints.ram)
+        self.ram_model = self.load_ram_model(checkpoint=checkpoints.ram)
         # Load SAM predictor
         self.sam_predictor = SamPredictor(
             build_sam(checkpoint=checkpoints.sam).to(self.device)
         )
 
     def download_checkpoints(self):
-        checkpoints = SLConfig.fromfile("./config/checkpoints.py")
-        checkpoints = [
-            (checkpoints.ram_url, checkpoints.ram),
-            (checkpoints.grounded_url, checkpoints.grounded),
-            (checkpoints.sam_url, checkpoints.sam),
-        ]
-        # Download all models and save them to the models folder.
-        for i, (url, file_name) in enumerate(checkpoints):
-            file_name = os.path.join("models", file_name)
-            checkpoints[i] = (url, file_name)
-            urllib.request.urlretrieve(url, file_name)
+        checkpoints_config = SLConfig.fromfile("./config/checkpoints.py")
 
-        return checkpoints
+        checkpoints = {
+            "ram": checkpoints_config.ram_url,
+            "grounded": checkpoints_config.grounded_url,
+            "sam": checkpoints_config.sam_url,
+        }
+
+        checkpoints_dir = "checkpoints"
+        if not os.path.exists(checkpoints_dir):
+            os.makedirs(checkpoints_dir)
+
+        for name, url in checkpoints.items():
+            checkpoint_filepath = os.path.join(
+                checkpoints_dir, getattr(checkpoints_config, name)
+            )
+            if not os.path.exists(checkpoint_filepath):
+                print(f"Downloading model: {name} from url: {url}")
+                response = requests.get(url, stream=True)
+                total_size_in_bytes = int(response.headers.get("content-length", 0))
+                block_size = 1024  # 1 Kibibyte
+                progress_bar = tqdm(
+                    total=total_size_in_bytes, unit="iB", unit_scale=True
+                )
+                with open(checkpoint_filepath, "wb") as file:
+                    for data in response.iter_content(block_size):
+                        progress_bar.update(len(data))
+                        file.write(data)
+                progress_bar.close()
+                if total_size_in_bytes != 0 and progress_bar.n != total_size_in_bytes:
+                    print("ERROR, something went wrong")
+
+            # Update the attribute in the checkpoints_config
+            setattr(checkpoints_config, name, checkpoint_filepath)
+
+        return checkpoints_config
 
     def get_grounding_output(self, model, image, tags):
         tags = tags.lower()
@@ -125,31 +149,35 @@ class SegmentateImage(object):
         _ = model.eval()
         return model
 
-    def get_objects(self, image_path):
+    def get_objects(self, image_filename):
         # Load image
-        image_pil, image = self.load_image(image_path)
+        image_path = os.path.join("images", image_filename)
+        image_pil = Image.open(image_path).convert("RGB")
         # Visualize raw image
-        image_pil.save(os.path.join(self.output_dir, image_path + "_raw.jpg"))
-
-        normalize = TS.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        transform = TS.Compose([TS.Resize((384, 384)), TS.ToTensor(), normalize])
-        raw_image = image_pil.resize((384, 384))
-        raw_image = transform(raw_image).unsqueeze(0).to(self.device)
+        filename, ext = os.path.splitext(image_filename)
+        raw_image_name = filename[: filename.rfind(".")] + "_raw" + ext
+        image_pil.save(os.path.join(self.output_dir, raw_image_name))
 
         # Get tags using ram model
-        english_tags, chinese_tags = self.get_tags(image)
+        image_raw = image_pil.resize((self.image_size, self.image_size))
+        image_raw_tensor = self.normalize_image(image_pil=image_raw)
+        image_with_batch = image_raw_tensor.unsqueeze(0).to(self.device)
+        english_tags, chinese_tags = self.get_tags(image_with_batch)
         tags = english_tags.replace(" |", ",")
         print("Image Tags: ", tags)
 
         # Get boxes using grounding model
+        image_tensor = self.normalize_image(image_pil=image_pil)
         boxes_filt, pred_phrases = self.get_boxes(
-            image=image,
+            image=image_tensor,
             image_pil=image_pil,
             tags=tags,
         )
 
         # Get masks using sam model
-        masks = self.segmentate_image(image_path, boxes_filt)
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        masks = self.segmentate_image(image, boxes_filt)
 
         # Draw output image
         plt.figure(figsize=(10, 10))
@@ -165,8 +193,9 @@ class SegmentateImage(object):
 
         plt.title(f"Image Tags: {tags}")
         plt.axis("off")
+        labeled_image_name = filename[: filename.rfind(".")] + "_labeled" + ext
         plt.savefig(
-            os.path.join(self.output_dir, image_path + "_labeled.jpg"),
+            os.path.join(self.output_dir, labeled_image_name),
             bbox_inches="tight",
             dpi=300,
             pad_inches=0.0,
@@ -202,13 +231,11 @@ class SegmentateImage(object):
         return boxes_filt, pred_phrases
 
     def get_tags(self, image):
-        tags, tags_chinese = self.ram_model.generate_tag(image)
+        tags, chinese_tags = self.ram_model.generate_tag(image)
 
-        return tags[0], tags_chinese[0]
+        return tags[0], chinese_tags[0]
 
-    def segmentate_image(self, image_path, boxes_filt):
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    def segmentate_image(self, image, boxes_filt):
         self.sam_predictor.set_image(image)
 
         transformed_boxes = self.sam_predictor.transform.apply_boxes_torch(
@@ -223,24 +250,17 @@ class SegmentateImage(object):
         )
         return masks
 
-    def load_image(self, image_path):
-        image_pil = (
-            Image.open(image_path)
-            .convert("RGB")
-            .resize((self.ram_args.image_size, self.ram_args.image_size))
-        )
-        image = self.ram_transform(image_pil).unsqueeze(0).to(self.device)
-
+    def normalize_image(self, image_pil):
         normalize = TS.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         transform = TS.Compose(
             [
-                TS.Resize((self.ram_args.image_size, self.ram_args.image_size)),
+                TS.Resize((self.image_size, self.image_size)),
                 TS.ToTensor(),
                 normalize,
             ]
         )
-        image = transform(image_pil).unsqueeze(0).to(self.device)
-        return image_pil, image
+        image = transform(image_pil)
+        return image
 
     def save_mask_data(self, output_dir, tags, mask_list, box_list, label_list):
         value = 0  # 0 for background
@@ -300,7 +320,9 @@ class SegmentateImage(object):
 def main():
     segmentate_image = SegmentateImage()
     # Test
-    segmentate_image.segmentate_image(image_path="config/moveit_test_2.png")
+    masks, boxes, labels = segmentate_image.get_objects(
+        image_filename="moveit_test_2.png"
+    )
 
 
 if __name__ == "__main__":
