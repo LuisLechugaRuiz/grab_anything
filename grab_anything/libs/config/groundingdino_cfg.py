@@ -41,3 +41,4 @@ text_dropout = 0.0
 fusion_dropout = 0.0
 fusion_droppath = 0.1
 sub_sentence_present = True
+# Can we do this?
