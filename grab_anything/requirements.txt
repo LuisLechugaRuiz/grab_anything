@@ -6,3 +6,4 @@ fairscale
 scipy
 setuptools_rust
 docker-compose
+segment-anything

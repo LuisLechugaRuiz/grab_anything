@@ -13,3 +13,4 @@ _build/
 **/log/
 checkpoints/
 __pycache__
+.vscode

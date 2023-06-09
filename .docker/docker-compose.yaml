@@ -34,6 +34,7 @@ services:
     volumes:
       # Allows graphical programs in the container
       - ../grab_anything:/app/grab_anything
+      - ../grab_anything_ws:/app/grab_anything_ws
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
 

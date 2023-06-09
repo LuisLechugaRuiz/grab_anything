@@ -5,12 +5,12 @@ source /opt/ros/humble/setup.bash
 echo "Sourced ROS 2 Humble"
 
 # Source the base workspace, if built
-if [ -f /root/moveit_ws/install/setup.bash ]
+if [ -f /app/grab_anything_ws/install/setup.bash ]
 then
-  source /root/moveit_ws/install/setup.bash
-  echo "Sourced MoveIt workspace"
+  source /app/grab_anything_ws/install/setup.bash
+  echo "Sourced grab anything workspace"
 else
-  echo "Please build the MoveIt workspace with:"
+  echo "Please build the grab_anything_ws with:"
   echo "colcon build --symlink-install"
 fi
 
