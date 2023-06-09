@@ -1,3 +1,6 @@
 [submodule "grab_anything/libs/recognize_anything"]
 	path = grab_anything/libs/recognize_anything
 	url = git@github.com:xinyu1205/Recognize_Anything-Tag2Text.git
+[submodule "grab_anything/libs/groundingdino"]
+	path = grab_anything/libs/groundingdino
+	url = git@github.com:IDEA-Research/Grounded-Segment-Anything.git
